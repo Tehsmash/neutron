@@ -688,17 +688,22 @@ class TestIpAddrCommand(TestIPCmdBase):
     def test_list(self):
         expected = [
             dict(scope='global',
-                 dynamic=False, cidr='172.16.77.240/24'),
+                 dynamic=False, cidr='172.16.77.240/24', tentative=False),
             dict(scope='global',
-                 dynamic=True, cidr='2001:470:9:1224:5595:dd51:6ba2:e788/64'),
+                 dynamic=True, cidr='2001:470:9:1224:5595:dd51:6ba2:e788/64',
+                 tentative=False),
             dict(scope='global',
-                 dynamic=True, cidr='2001:470:9:1224:fd91:272:581e:3a32/64'),
+                 dynamic=True, cidr='2001:470:9:1224:fd91:272:581e:3a32/64',
+                 tentative=False),
             dict(scope='global',
-                 dynamic=True, cidr='2001:470:9:1224:4508:b885:5fb:740b/64'),
+                 dynamic=True, cidr='2001:470:9:1224:4508:b885:5fb:740b/64',
+                 tentative=False),
             dict(scope='global',
-                 dynamic=True, cidr='2001:470:9:1224:dfcc:aaff:feb9:76ce/64'),
+                 dynamic=True, cidr='2001:470:9:1224:dfcc:aaff:feb9:76ce/64',
+                 tentative=False),
             dict(scope='link',
-                 dynamic=False, cidr='fe80::dfcc:aaff:feb9:76ce/64')]
+                 dynamic=False, cidr='fe80::dfcc:aaff:feb9:76ce/64',
+                 tentative=False)]
 
         test_cases = [ADDR_SAMPLE, ADDR_SAMPLE2]
 
@@ -710,7 +715,7 @@ class TestIpAddrCommand(TestIPCmdBase):
     def test_list_filtered(self):
         expected = [
             dict(scope='global',
-                 dynamic=False, cidr='172.16.77.240/24')]
+                 dynamic=False, cidr='172.16.77.240/24', tentative=False)]
 
         test_cases = [ADDR_SAMPLE, ADDR_SAMPLE2]
 

@@ -371,6 +371,7 @@ class IpAddrCommand(IpDeviceCommandBase):
             line = line.strip()
             if not line.startswith('inet'):
                 continue
+            tentative = 'tentative' in line
             parts = line.split()
             if parts[0] == 'inet6':
                 scope = parts[3]
@@ -382,7 +383,8 @@ class IpAddrCommand(IpDeviceCommandBase):
 
             retval.append(dict(cidr=parts[1],
                                scope=scope,
-                               dynamic=('dynamic' == parts[-1])))
+                               dynamic=('dynamic' == parts[-1]),
+                               tentative=tentative))
         return retval
 
 

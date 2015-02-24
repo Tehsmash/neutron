@@ -32,6 +32,7 @@ from neutron.agent.l3 import namespaces
 from neutron.agent.l3 import router_processing_queue as queue
 from neutron.agent.linux import external_process
 from neutron.agent.linux import ip_lib
+from neutron.agent.linux import pd
 from neutron.agent.metadata import driver as metadata_driver
 from neutron.agent import rpc as agent_rpc
 from neutron.callbacks import events
@@ -76,6 +77,7 @@ class L3PluginApi(object):
         1.4 - Added L3 HA update_router_state. This method was reworked in
               to update_ha_routers_states
         1.5 - Added update_ha_routers_states
+        1.6 - Added send_prefix_update
 
     """
 
@@ -128,6 +130,12 @@ class L3PluginApi(object):
         cctxt = self.client.prepare(version='1.5')
         return cctxt.call(context, 'update_ha_routers_states',
                           host=self.host, states=states)
+
+    def send_prefix_update(self, context, prefix_update):
+        """Send prefix update whenever prefixes get changed."""
+        cctxt = self.client.prepare(version='1.6')
+        return cctxt.call(context, 'process_prefix_update',
+                          subnets=prefix_update)
 
 
 class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
@@ -222,6 +230,11 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         if self.conf.enable_metadata_proxy:
             self.metadata_driver = metadata_driver.MetadataDriver(self)
 
+        self.pd = pd.PrefixDelegation(self.context, self.process_monitor,
+                                      self.driver,
+                                      self.plugin_rpc.send_prefix_update,
+                                      self.create_pd_router_update)
+
     def _check_config_params(self):
         """Check items in configuration files.
 
@@ -309,6 +322,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         ri = self._create_router(router_id, router)
         registry.notify(resources.ROUTER, events.BEFORE_CREATE,
                         self, router=ri)
+        self.pd.add_router(router_id, ri.ns_name)
 
         self.router_info[router_id] = ri
 
@@ -342,6 +356,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         del self.router_info[router_id]
 
         registry.notify(resources.ROUTER, events.AFTER_DELETE, self, router=ri)
+        self.pd.remove_router(router_id)
 
     def update_fip_statuses(self, ri, existing_floating_ips, fip_statuses):
         # Identify floating IPs which were disabled
@@ -434,6 +449,10 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
     def _process_router_update(self):
         for rp, update in self._queue.each_update_to_next_router():
             LOG.debug("Starting router update for %s", update.id)
+            if update.action == queue.PD_UPDATE:
+                self.pd.run_pd_client()
+                continue
+
             router = update.router
             if update.action != queue.DELETE_ROUTER and not router:
                 try:
@@ -550,6 +569,15 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         LOG.info(_LI("L3 agent started"))
         # When L3 agent is ready, we immediately do a full sync
         self.periodic_sync_routers_task(self.context)
+        self.pd.after_start()
+
+    def create_pd_router_update(self):
+        router_id = None
+        update = queue.RouterUpdate(router_id,
+                                    queue.PRIORITY_PD_UPDATE,
+                                    timestamp=timeutils.utcnow(),
+                                    action=queue.PD_UPDATE)
+        self._queue.add(update)
 
 
 class L3NATAgentWithStateReport(L3NATAgent):

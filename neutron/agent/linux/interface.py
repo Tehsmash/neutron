@@ -128,6 +128,36 @@ class LinuxInterfaceDriver(object):
         for route in existing_onlink_routes - new_onlink_routes:
             device.route.delete_onlink_route(route)
 
+    def add_v6addr(self, device_name, v6addr, namespace):
+        device = ip_lib.IPDevice(device_name,
+                                 namespace=namespace)
+        net = netaddr.IPNetwork(v6addr)
+        device.addr.add(str(net))
+
+    def delete_v6addr(self, device_name, v6addr, namespace):
+        device = ip_lib.IPDevice(device_name,
+                                 namespace=namespace)
+        device.addr.delete(v6addr)
+        self.delete_conntrack_state(namespace=namespace,
+                                    ip=v6addr)
+
+    def delete_v6addr_with_prefix(self, device_name, prefix, namespace):
+        device = ip_lib.IPDevice(device_name, namespace=namespace)
+        net = str(netaddr.IPNetwork(prefix).network)
+        for address in device.addr.list(scope='global', filters=['permanent']):
+            if (address['ip_version'] == 6 and
+                address['cidr'].startswith(net)):
+                device.addr.delete(address['cidr'])
+                self.delete_conntrack_state(namespace=namespace,
+                                            ip=address['cidr'])
+                break
+
+    def get_llas(self, device_name, namespace):
+        device = ip_lib.IPDevice(device_name,
+                                 namespace=namespace)
+
+        return device.addr.list(scope='link', ip_version=6)
+
     def delete_conntrack_state(self, namespace, ip):
         """Delete conntrack state associated with an IP address.
 

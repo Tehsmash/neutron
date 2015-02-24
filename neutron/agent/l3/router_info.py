@@ -278,6 +278,21 @@ class RouterInfo(object):
         if self.router_namespace:
             self.router_namespace.delete()
 
+    def _internal_network_updated(self, port, subnet_id, prefix, old_prefix):
+        port_id = port['id']
+        interface_name = self.get_internal_device_name(port_id)
+        if prefix != l3_constants.TEMP_PD_PREFIX:
+            fixed_ips = port['fixed_ips']
+            for fixed_ip in fixed_ips:
+                if fixed_ip['subnet_id'] == subnet_id:
+                    v6addr = common_utils.ip_to_cidr(fixed_ip['ip_address'],
+                                                     fixed_ip.get('prefixlen'))
+                    self.driver.add_v6addr(interface_name, v6addr,
+                                           self.ns_name)
+        else:
+            self.driver.delete_v6addr_with_prefix(interface_name, old_prefix,
+                                                  self.ns_name)
+
     def _internal_network_added(self, ns_name, network_id, port_id,
                                 fixed_ips, mac_address,
                                 interface_name, prefix):
@@ -339,7 +354,8 @@ class RouterInfo(object):
     def _port_has_ipv6_subnet(port):
         if 'subnets' in port:
             for subnet in port['subnets']:
-                if netaddr.IPNetwork(subnet['cidr']).version == 6:
+                if (netaddr.IPNetwork(subnet['cidr']).version == 6 and
+                    subnet['cidr'] != l3_constants.TEMP_PD_PREFIX):
                     return True
 
     def enable_radvd(self, internal_ports=None):
@@ -353,7 +369,7 @@ class RouterInfo(object):
                   self.router_id)
         self.radvd.disable()
 
-    def _process_internal_ports(self):
+    def _process_internal_ports(self, pd):
         existing_port_ids = set(p['id'] for p in self.internal_ports)
 
         internal_ports = self.router.get(l3_constants.INTERFACE_KEY, [])
@@ -372,11 +388,20 @@ class RouterInfo(object):
             self.internal_network_added(p)
             self.internal_ports.append(p)
             enable_ra = enable_ra or self._port_has_ipv6_subnet(p)
+            for subnet in p['subnets']:
+                if subnet.get('ipv6_pd_enabled', False):
+                    interface_name = self.get_internal_device_name(p['id'])
+                    pd.enable_subnet(self.router_id, subnet['id'],
+                                     subnet['cidr'],
+                                     interface_name, p['mac_address'])
 
         for p in old_ports:
             self.internal_network_removed(p)
             self.internal_ports.remove(p)
             enable_ra = enable_ra or self._port_has_ipv6_subnet(p)
+            for subnet in p['subnets']:
+                if subnet.get('ipv6_pd_enabled', False):
+                    pd.disable_subnet(self.router_id, subnet['id'])
 
         if updated_ports:
             for index, p in enumerate(internal_ports):
@@ -388,6 +413,21 @@ class RouterInfo(object):
                 self.driver.init_l3(interface_name, ip_cidrs=ip_cidrs,
                         namespace=self.ns_name)
                 enable_ra = enable_ra or self._port_has_ipv6_subnet(p)
+
+        # Check if there is any pd prefix update
+        for p in internal_ports:
+            if (p['id'] in current_port_ids and
+                p['id'] in existing_port_ids):
+                for subnet in p['subnets']:
+                    if subnet.get('ipv6_pd_enabled', False):
+                        old_prefix = pd.update_subnet(self.router_id,
+                                                      subnet['id'],
+                                                      subnet['cidr'])
+                        if old_prefix:
+                            self._internal_network_updated(p, subnet['id'],
+                                                           subnet['cidr'],
+                                                           old_prefix)
+                            enable_ra = True
 
         # Enable RA
         if enable_ra:
@@ -402,6 +442,7 @@ class RouterInfo(object):
         for stale_dev in stale_devs:
             LOG.debug('Deleting stale internal router device: %s',
                       stale_dev)
+            pd.remove_stale_ri_ifname(self.router_id, stale_dev)
             self.driver.unplug(stale_dev,
                                namespace=self.ns_name,
                                prefix=INTERNAL_DEV_PREFIX)
@@ -483,7 +524,7 @@ class RouterInfo(object):
                            namespace=self.ns_name,
                            prefix=EXTERNAL_DEV_PREFIX)
 
-    def _process_external_gateway(self, ex_gw_port):
+    def _process_external_gateway(self, ex_gw_port, pd):
         # TODO(Carl) Refactor to clarify roles of ex_gw_port vs self.ex_gw_port
         ex_gw_port_id = (ex_gw_port and ex_gw_port['id'] or
                          self.ex_gw_port and self.ex_gw_port['id'])
@@ -504,10 +545,12 @@ class RouterInfo(object):
 
             if not self.ex_gw_port:
                 self.external_gateway_added(ex_gw_port, interface_name)
+                pd.add_gw_interface(self.router['id'], interface_name)
             elif not _gateway_ports_equal(ex_gw_port, self.ex_gw_port):
                 self.external_gateway_updated(ex_gw_port, interface_name)
         elif not ex_gw_port and self.ex_gw_port:
             self.external_gateway_removed(self.ex_gw_port, interface_name)
+            pd.remove_gw_interface(self.router['id'])
 
         existing_devices = self._get_existing_devices()
         stale_devs = [dev for dev in existing_devices
@@ -515,6 +558,7 @@ class RouterInfo(object):
                       and dev != interface_name]
         for stale_dev in stale_devs:
             LOG.debug('Deleting stale external router device: %s', stale_dev)
+            pd.remove_gw_interface(self.router['id'])
             self.driver.unplug(stale_dev,
                                bridge=self.agent_conf.external_network_bridge,
                                namespace=self.ns_name,
@@ -581,7 +625,7 @@ class RouterInfo(object):
         try:
             with self.iptables_manager.defer_apply():
                 ex_gw_port = self.get_ex_gw_port()
-                self._process_external_gateway(ex_gw_port)
+                self._process_external_gateway(ex_gw_port, agent.pd)
                 # TODO(Carl) Return after setting existing_floating_ips and
                 # still call update_fip_statuses?
                 if not ex_gw_port:
@@ -613,7 +657,8 @@ class RouterInfo(object):
 
         :param agent: Passes the agent in order to send RPC messages.
         """
-        self._process_internal_ports()
+        self._process_internal_ports(agent.pd)
+        agent.pd.sync_router(self.router['id'])
         self.process_external(agent)
         # Process static routes for router
         self.routes_updated()

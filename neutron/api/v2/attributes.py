@@ -827,6 +827,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                               'validate': {'type:values':
                                            constants.IPV6_MODES},
                               'is_visible': True},
+        'ipv6_pd_enabled': {'allow_post': False, 'allow_put': False,
+                            'default': False,
+                            'convert_to': convert_to_boolean,
+                            'is_visible': False},
         SHARED: {'allow_post': False,
                  'allow_put': False,
                  'default': False,

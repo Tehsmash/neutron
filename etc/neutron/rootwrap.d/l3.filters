@@ -15,6 +15,11 @@ arping: CommandFilter, arping, root
 sysctl: CommandFilter, sysctl, root
 route: CommandFilter, route, root
 radvd: CommandFilter, radvd, root
+dibbler-client: CommandFilter, dibbler-client, root
+# If installed from source the prefix will be
+# /usr/local instead of /usr/bin.
+# TODO(john-davidge) - Remove once Dibbler v1.0.1 is more widely available
+dibbler-client_local: CommandFilter, /usr/local/sbin/dibbler-client, root
 
 # metadata proxy
 metadata_proxy: CommandFilter, neutron-ns-metadata-proxy, root

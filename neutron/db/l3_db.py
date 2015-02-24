@@ -468,21 +468,25 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                         msg = (_("Router already has a port on subnet %s")
                                % subnet_id)
                         raise n_exc.BadRequest(resource='router', msg=msg)
-                    sub_id = ip['subnet_id']
-                    cidr = self._core_plugin._get_subnet(context.elevated(),
-                                                         sub_id)['cidr']
-                    ipnet = netaddr.IPNetwork(cidr)
-                    match1 = netaddr.all_matching_cidrs(new_ipnet, [cidr])
-                    match2 = netaddr.all_matching_cidrs(ipnet, [subnet_cidr])
-                    if match1 or match2:
-                        data = {'subnet_cidr': subnet_cidr,
-                                'subnet_id': subnet_id,
-                                'cidr': cidr,
-                                'sub_id': sub_id}
-                        msg = (_("Cidr %(subnet_cidr)s of subnet "
-                                 "%(subnet_id)s overlaps with cidr %(cidr)s "
-                                 "of subnet %(sub_id)s") % data)
-                        raise n_exc.BadRequest(resource='router', msg=msg)
+                    # Ignore temporary Prefix Delegation CIDRs
+                    if subnet_cidr != l3_constants.TEMP_PD_PREFIX:
+                        sub_id = ip['subnet_id']
+                        cidr = self._core_plugin._get_subnet(
+                                                 context.elevated(),
+                                                 sub_id)['cidr']
+                        ipnet = netaddr.IPNetwork(cidr)
+                        match1 = netaddr.all_matching_cidrs(new_ipnet, [cidr])
+                        match2 = netaddr.all_matching_cidrs(ipnet,
+                                                            [subnet_cidr])
+                        if match1 or match2:
+                            data = {'subnet_cidr': subnet_cidr,
+                                    'subnet_id': subnet_id,
+                                    'cidr': cidr,
+                                    'sub_id': sub_id}
+                            msg = (_("Cidr %(subnet_cidr)s of subnet "
+                                     "%(subnet_id)s overlaps with cidr "
+                                     "%(cidr)s of subnet %(sub_id)s") % data)
+                            raise n_exc.BadRequest(resource='router', msg=msg)
         except exc.NoResultFound:
             pass
 
@@ -573,7 +577,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         fixed_ip = {'ip_address': subnet['gateway_ip'],
                     'subnet_id': subnet['id']}
 
-        if subnet['ip_version'] == 6:
+        if subnet['ip_version'] == 6 and not subnet['ipv6_pd_enabled']:
             # Add new prefix to an existing ipv6 port with the same network id
             # if one exists
             port = self._find_ipv6_router_port_by_network(router,
@@ -1180,7 +1184,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                           for p in each_port_having_fixed_ips())
         filters = {'network_id': [id for id in network_ids]}
         fields = ['id', 'cidr', 'gateway_ip',
-                  'network_id', 'ipv6_ra_mode']
+                  'network_id', 'ipv6_ra_mode', 'ipv6_pd_enabled']
 
         subnets_by_network = dict((id, []) for id in network_ids)
         for subnet in self._core_plugin.get_subnets(context, filters, fields):
@@ -1198,7 +1202,8 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                 subnet_info = {'id': subnet['id'],
                                'cidr': subnet['cidr'],
                                'gateway_ip': subnet['gateway_ip'],
-                               'ipv6_ra_mode': subnet['ipv6_ra_mode']}
+                               'ipv6_ra_mode': subnet['ipv6_ra_mode'],
+                               'ipv6_pd_enabled': subnet['ipv6_pd_enabled']}
                 for fixed_ip in port['fixed_ips']:
                     if fixed_ip['subnet_id'] == subnet['id']:
                         port['subnets'].append(subnet_info)
