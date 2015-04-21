@@ -14,9 +14,11 @@
 #    under the License.
 
 import eventlet
+import importlib
 import signal
 
-from neutron.agent.linux import dibbler
+from oslo_config import cfg
+
 from neutron.common import constants as l3_constants
 from neutron.common import ipv6_utils
 from neutron.common import utils
@@ -24,6 +26,16 @@ from oslo_log import log as logging
 
 
 LOG = logging.getLogger(__name__)
+
+OPTS = [
+    cfg.StrOpt('pd_dhcp_driver',
+               default='neutron.agent.linux.dibbler',
+               help=_('Service to handle DHCPv6 Prefix delegation')),
+]
+
+cfg.CONF.register_opts(OPTS)
+
+pd_driver = importlib.import_module(cfg.CONF.pd_dhcp_driver)
 
 
 class PrefixDelegation(object):
@@ -34,6 +46,7 @@ class PrefixDelegation(object):
         self.notifier = notifier
         self.routers = {}
         self.pd_update_cb = pd_update_cb
+        self.pd_dhcp_driver = pd_driver
         self._get_sync_data()
 
     @staticmethod
@@ -280,8 +293,8 @@ class PrefixDelegation(object):
 
                     if self._ensure_lla(pdo['bind_lla_with_mask'], llas):
                         if not pdo['pdobject']:
-                            pdo['pdobject'] = dibbler.PDDibbler(router_id,
-                                                  subnet_id, pdo['ri_ifname'])
+                            pdo['pdobject'] = self.pd_dhcp_driver.PDManager(
+                                router_id, subnet_id, pdo['ri_ifname'])
                         pdo['pdobject'].enable(self.pmon, router['ns_name'],
                                                router['gw_interface'],
                                                pdo['bind_lla'])
@@ -300,7 +313,7 @@ class PrefixDelegation(object):
         self.pd_update_cb()
 
     def _get_sync_data(self):
-        sync_data = dibbler.get_sync_data()
+        sync_data = self.pd_dhcp_driver.get_sync_data()
         for pd_info in sync_data:
             router_id = pd_info['router_id']
             if not self.routers.get(router_id):

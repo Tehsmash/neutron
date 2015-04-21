@@ -35,6 +35,7 @@ from neutron.agent.l3 import legacy_router
 from neutron.agent.l3 import link_local_allocator as lla
 from neutron.agent.l3 import namespaces
 from neutron.agent.l3 import router_info as l3router
+from neutron.agent.linux import dibbler
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
 from neutron.agent.linux import pd
@@ -2496,7 +2497,7 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
     def _pd_get_requestor_id(self, intf, router, ri):
         ifname = ri.get_internal_device_name(intf['id'])
         for subnet in intf['subnets']:
-            return pd.dibbler.PDDibbler(router['id'],
+            return dibbler.PDManager(router['id'],
                        subnet['id'], ifname)._get_requestor_id()
             break
 
@@ -2584,11 +2585,11 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         gw_ifname = ri.get_external_device_name(router['gw_port']['id'])
         agent.pd.add_gw_interface(router['id'], gw_ifname)
 
-    @mock.patch.object(pd.dibbler.PDDibbler, 'get_prefix', autospec=True)
-    @mock.patch.object(pd.dibbler.os, 'getpid', return_value=1234)
+    @mock.patch.object(dibbler.PDManager, 'get_prefix', autospec=True)
+    @mock.patch.object(dibbler.os, 'getpid', return_value=1234)
     @mock.patch.object(pd.PrefixDelegation, '_ensure_lla', return_value=True)
-    @mock.patch.object(pd.dibbler.os, 'chmod')
-    @mock.patch.object(pd.dibbler.shutil, 'rmtree')
+    @mock.patch.object(dibbler.os, 'chmod')
+    @mock.patch.object(dibbler.shutil, 'rmtree')
     @mock.patch.object(pd.PrefixDelegation, '_get_sync_data')
     def test_pd_dibbler(self, mock1, mock2, mock3, mock4,
                         mock_getpid, mock_get_prefix):
@@ -2622,11 +2623,11 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         # Now remove the interface
         self._pd_remove_interfaces(intfs, agent, router, ri)
 
-    @mock.patch.object(pd.dibbler.PDDibbler, 'get_prefix', autospec=True)
-    @mock.patch.object(pd.dibbler.os, 'getpid', return_value=1234)
+    @mock.patch.object(dibbler.PDManager, 'get_prefix', autospec=True)
+    @mock.patch.object(dibbler.os, 'getpid', return_value=1234)
     @mock.patch.object(pd.PrefixDelegation, '_ensure_lla', return_value=True)
-    @mock.patch.object(pd.dibbler.os, 'chmod')
-    @mock.patch.object(pd.dibbler.shutil, 'rmtree')
+    @mock.patch.object(dibbler.os, 'chmod')
+    @mock.patch.object(dibbler.shutil, 'rmtree')
     @mock.patch.object(pd.PrefixDelegation, '_get_sync_data')
     def test_pd_dibbler1(self, mock1, mock2, mock3, mock4,
                         mock_getpid, mock_get_prefix):
@@ -2658,11 +2659,11 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         # There will be a router update
         ri.process(agent)
 
-    @mock.patch.object(pd.dibbler.PDDibbler, 'get_prefix', autospec=True)
-    @mock.patch.object(pd.dibbler.os, 'getpid', return_value=1234)
+    @mock.patch.object(dibbler.PDManager, 'get_prefix', autospec=True)
+    @mock.patch.object(dibbler.os, 'getpid', return_value=1234)
     @mock.patch.object(pd.PrefixDelegation, '_ensure_lla', return_value=True)
-    @mock.patch.object(pd.dibbler.os, 'chmod')
-    @mock.patch.object(pd.dibbler.shutil, 'rmtree')
+    @mock.patch.object(dibbler.os, 'chmod')
+    @mock.patch.object(dibbler.shutil, 'rmtree')
     @mock.patch.object(pd.PrefixDelegation, '_get_sync_data')
     def test_pd_dibbler2(self, mock1, mock2, mock3, mock4,
                         mock_getpid, mock_get_prefix):
@@ -2696,11 +2697,11 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         # Now remove the interface
         self._pd_remove_interfaces(intfs, agent, router, ri)
 
-    @mock.patch.object(pd.dibbler.PDDibbler, 'get_prefix', autospec=True)
-    @mock.patch.object(pd.dibbler.os, 'getpid', return_value=1234)
+    @mock.patch.object(dibbler.PDManager, 'get_prefix', autospec=True)
+    @mock.patch.object(dibbler.os, 'getpid', return_value=1234)
     @mock.patch.object(pd.PrefixDelegation, '_ensure_lla', return_value=True)
-    @mock.patch.object(pd.dibbler.os, 'chmod')
-    @mock.patch.object(pd.dibbler.shutil, 'rmtree')
+    @mock.patch.object(dibbler.os, 'chmod')
+    @mock.patch.object(dibbler.shutil, 'rmtree')
     @mock.patch.object(pd.PrefixDelegation, '_get_sync_data')
     def test_pd_dibbler3(self, mock1, mock2, mock3, mock4,
                         mock_getpid, mock_get_prefix):

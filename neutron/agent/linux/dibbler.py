@@ -20,24 +20,14 @@ import shutil
 import six
 
 from neutron.agent.linux import external_process
+from neutron.agent.linux import pd_driver_config  # noqa
+from neutron.agent.linux import pd_plugin
 from neutron.agent.linux import utils
 from neutron.common import constants
 from oslo_log import log as logging
 
 
 LOG = logging.getLogger(__name__)
-
-OPTS = [
-    cfg.StrOpt('pd_confs',
-               default='$state_path/pd',
-               help=_('Location to store IPv6 PD config files')),
-    cfg.StrOpt('vrpen',
-               default='8888',
-               help=_("A decimal value as Vendor's Registered Private "
-                      "Enterprise Number as required by RFC3315 DUID-EN")),
-]
-
-cfg.CONF.register_opts(OPTS)
 
 PD_SERVICE_NAME = 'dibbler'
 CONFIG_TEMPLATE = jinja2.Template("""
@@ -71,12 +61,7 @@ neutron-pd-notify $1 {{ prefix_path }} {{ l3_agent_pid }}
 """)
 
 
-class PDDibbler(object):
-    def __init__(self, router_id, subnet_id, ri_ifname):
-        self.router_id = router_id
-        self.subnet_id = subnet_id
-        self.ri_ifname = ri_ifname
-
+class PDManager(pd_plugin.PDManagerBase):
     def _get_requestor_id(self):
         return "%s:%s:%s" % (self.router_id, self.subnet_id, self.ri_ifname)
 
@@ -89,17 +74,17 @@ class PDDibbler(object):
 
     @staticmethod
     def _get_prefix_path(requestor_id):
-        dcwa = PDDibbler._get_dibbler_client_working_area(requestor_id)
+        dcwa = PDManager._get_dibbler_client_working_area(requestor_id)
         return "%s/prefix" % dcwa
 
     @staticmethod
     def _get_pid_path(requestor_id):
-        dcwa = PDDibbler._get_dibbler_client_working_area(requestor_id)
+        dcwa = PDManager._get_dibbler_client_working_area(requestor_id)
         return "%s/client.pid" % dcwa
 
     @staticmethod
     def _is_dibbler_client_running(requestor_id):
-        return utils.get_value_from_file(PDDibbler._get_pid_path(requestor_id))
+        return utils.get_value_from_file(PDManager._get_pid_path(requestor_id))
 
     def _generate_dibbler_conf(self, requestor_id, ex_gw_ifname, lla):
         dcwa = self._get_dibbler_client_working_area(requestor_id)
@@ -209,7 +194,7 @@ def get_sync_data():
         pd_info['router_id'] = router_id
         pd_info['subnet_id'] = subnet_id
         pd_info['ri_ifname'] = ri_ifname
-        pd_info['pdobject'] = PDDibbler(router_id, subnet_id, ri_ifname)
+        pd_info['pdobject'] = PDManager(router_id, subnet_id, ri_ifname)
         pd_info['client_started'] = (
             pd_info['pdobject']._is_dibbler_client_running(requestor_id))
         pd_info['prefix'] = pd_info['pdobject'].get_prefix()
